@@ -82,47 +82,54 @@ func LogInit(environment *environment.Env) {
 	env = environment
 	SetLogLevel(env.GetString("log.level"))
 	var handlerStdOut = handler.Stream(os.Stdout, &customFormatter{})
+	var handlerGroup logger.HandlerInterface
 
-	var handlerSocket = logger.NopHandler
-	conn, err := net.DialTimeout("tcp",
-		env.GetString("qsaver.host")+":"+env.GetString("qsaver.port"), 3*time.Second)
-	if err != nil {
-		log.Printf("Failed connect to %s:%s : '%s'\n",
-			env.GetString("qsaver.host"),
-			env.GetString("qsaver.port"),
-			err.Error())
+	if env.GetBool("qsaver.enable") {
+		var handlerSocket = logger.NopHandler
+		conn, err := net.DialTimeout("tcp",
+			env.GetString("qsaver.host")+":"+env.GetString("qsaver.port"), 3*time.Second)
+		if err != nil {
+			log.Printf("Failed connect to %s:%s : '%s'\n",
+				env.GetString("qsaver.host"),
+				env.GetString("qsaver.port"),
+				err.Error())
+		} else {
+			handlerSocket = handler.Socket(conn, formatter.NewJSON(func(entry logger.Entry) ([]byte, error) {
+				host, err := os.Hostname()
+				if err != nil {
+					panic(err)
+				}
+
+				logMessage := FBLog{
+					Time:         JSONTime(time.Now()),
+					Level:        strings.ToUpper(entry.Level.String()),
+					Message:      entry.Message,
+					Error:        "_",
+					Thread:       entry.Context.GoString(),
+					Logger:       entry.Context.GoString(),
+					Host:         host,
+					Service:      env.GetString("service.name"),
+					TraceId:      "_",
+					SpanId:       "_",
+					ParentSpanId: "_",
+				}
+				logMessageJson, err := json.Marshal(logMessage)
+				if err != nil {
+					return nil, err
+				}
+				return logMessageJson, nil
+			}))
+
+		}
+		handlerGroup = handler.Group(
+			logHandlerWithLevel(handlerStdOut),
+			logHandlerWithLevel(handlerSocket),
+		)
 	} else {
-		handlerSocket = handler.Socket(conn, formatter.NewJSON(func(entry logger.Entry) ([]byte, error) {
-			host, err := os.Hostname()
-			if err != nil {
-				panic(err)
-			}
-
-			logMessage := FBLog{
-				Time:         JSONTime(time.Now()),
-				Level:        strings.ToUpper(entry.Level.String()),
-				Message:      entry.Message,
-				Error:        "_",
-				Thread:       entry.Context.GoString(),
-				Logger:       entry.Context.GoString(),
-				Host:         host,
-				Service:      env.GetString("service.name"),
-				TraceId:      "_",
-				SpanId:       "_",
-				ParentSpanId: "_",
-			}
-			logMessageJson, err := json.Marshal(logMessage)
-			if err != nil {
-				return nil, err
-			}
-			return logMessageJson, nil
-		}))
-
+		handlerGroup = handler.Group(
+			logHandlerWithLevel(handlerStdOut),
+		)
 	}
-	handlerGroup := handler.Group(
-		logHandlerWithLevel(handlerStdOut),
-		logHandlerWithLevel(handlerSocket),
-	)
 
 	lg = logger.NewLogger(handlerGroup)
 }
