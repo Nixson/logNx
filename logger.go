@@ -78,8 +78,8 @@ func IfDebug() bool {
 var lg *logger.Logger
 var env *environment.Env
 
-func LogInit(environment *environment.Env) {
-	env = environment
+func InitLog() {
+	env = environment.GetEnv()
 	SetLogLevel(env.GetString("log.level"))
 	var handlerStdOut = handler.Stream(os.Stdout, &customFormatter{})
 	var handlerGroup logger.HandlerInterface
@@ -134,7 +134,10 @@ func LogInit(environment *environment.Env) {
 	lg = logger.NewLogger(handlerGroup)
 }
 
-func GetLogger() *logger.Logger {
+func Get() *logger.Logger {
+	if lg == nil {
+		InitLog()
+	}
 	return lg
 }
 func logHandlerWithLevel(handlerInterface logger.HandlerInterface) logger.HandlerInterface {
